@@ -8,9 +8,9 @@ This repository holds all assignments and the semester project. The engineering 
 
 | Name | GitHub |
 |---|---|
-| Or Elimelech | _(username)_ |
-| Eyal Hirsch | _(username)_ |
-| Liron Skverchak | _(username)_ |
+| Or Elimelech | _(OrElimelechX)_ |
+| Eyal Hirsch | _(13Eyal)_ |
+| Liron Skverchak | _(Lironskv)_ |
 
 ## Repository structure
 
