@@ -1,0 +1,22 @@
+# Visual Paradigm backup and lock files
+*.vpp.bak*
+*.vpp.lck
+.*.vpp.lck
+
+# Submission archives (submitted through Moodle)
+*.zip
+
+# IntelliJ IDEA
+.idea/
+*.iml
+out/
+
+# Java build output
+target/
+build/
+*.class
+
+# OS files
+Thumbs.db
+.DS_Store
+desktop.ini

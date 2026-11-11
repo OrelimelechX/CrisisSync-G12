@@ -1,0 +1,107 @@
+@startuml
+' CrisisSync - Use Case Model, Assignment 1 (Group G12)
+' Text source of G12_Assignment1.vpp (Visual Paradigm 18.1).
+' include: base ..> included    extend: extension ..> base
+left to right direction
+
+' ---- Human actors (left) ----
+actor "Registered User" as AC01 <<abstract>>
+actor "System Administrator" as AC02
+actor "Logistics Officer" as AC03
+actor "Dispatcher" as AC04
+actor "Field Commander" as AC05
+actor "Field Crew Member" as AC06
+
+AC01 <|-- AC02
+AC01 <|-- AC03
+AC01 <|-- AC04
+AC01 <|-- AC05
+AC01 <|-- AC06
+
+rectangle "CrisisSync" {
+  usecase "Log In" as UC01
+  usecase "Manage User Accounts and Permissions" as UC02
+  usecase "Load Initial Data" as UC03
+  usecase "View Event History" as UC04
+  usecase "View Management Reports" as UC05
+  usecase "Generate Monthly Reports" as UC06
+  usecase "Generate Resource Utilization Report" as UC07
+  usecase "Generate SLA Report" as UC08
+  usecase "Update Equipment Maintenance Status" as UC10
+  usecase "Transfer Equipment Between Stations" as UC11
+  usecase "Update Crew Availability" as UC12
+  usecase "Open Event" as UC13
+  usecase "Create Task" as UC14
+  usecase "Edit Task Dependencies" as UC15
+  usecase "Reserve Resource Bundle" as UC16
+  usecase "Handle Reservation Conflict" as UC16a
+  usecase "Validate Resource Reservation" as UC17
+  usecase "Auto-Allocate Resource Bundle" as UC18
+  usecase "Retry With an Alternative Bundle" as UC18a
+  usecase "Monitor Event Status" as UC19
+  usecase "Cancel Task" as UC20
+  usecase "Cancel Dependent Tasks" as UC20a
+  usecase "Cancel Event" as UC21
+  usecase "Close Event" as UC22
+  usecase "Handle Settlement Rejection" as UC22a
+  usecase "Calculate Operating Costs" as UC23
+  usecase "Request Settlement" as UC24
+  usecase "Assign Replacement Equipment" as UC25
+  usecase "Report Task Completion" as UC26
+  usecase "Release Resources and Promote Dependent Tasks" as UC27
+  usecase "View Assigned Task Details" as UC28
+  usecase "Report Shift Start and Readiness" as UC29
+  usecase "Report Equipment Malfunction" as UC30
+}
+
+' ---- Non-human actors (right) ----
+actor "National Clearing & Settlement System" as AC07
+actor "System Clock" as AC08
+
+' ---- Associations ----
+AC01 -- UC01
+AC02 -- UC02
+AC02 -- UC03
+AC02 -- UC04
+AC02 -- UC05
+AC02 -- UC07
+AC02 -- UC08
+AC03 -- UC10
+AC03 -- UC11
+AC03 -- UC12
+AC04 -- UC13
+AC04 -- UC14
+AC04 -- UC15
+AC04 -- UC16
+AC04 -- UC18
+AC04 -- UC19
+AC04 -- UC20
+AC04 -- UC21
+AC04 -- UC22
+AC04 -- UC25
+AC05 -- UC19
+AC05 -- UC26
+AC05 -- UC30
+AC06 -- UC28
+AC06 -- UC29
+AC06 -- UC30
+UC24 -- AC07
+UC06 -- AC08
+
+' ---- <<include>> (base -> included) ----
+UC06 ..> UC07 : <<include>>
+UC06 ..> UC08 : <<include>>
+UC16 ..> UC17 : <<include>>
+UC18 ..> UC17 : <<include>>
+UC22 ..> UC23 : <<include>>
+UC22 ..> UC24 : <<include>>
+UC25 ..> UC17 : <<include>>
+UC26 ..> UC27 : <<include>>
+
+' ---- <<extend>> (extension -> base) ----
+UC16a ..> UC16 : <<extend>>
+UC18a ..> UC18 : <<extend>>
+UC20a ..> UC20 : <<extend>>
+UC22a ..> UC22 : <<extend>>
+
+@enduml
