@@ -46,7 +46,7 @@ rectangle "CrisisSync" {
   usecase "Handle Settlement Rejection" as UC22a
   usecase "Calculate Operating Costs" as UC23
   usecase "Request Settlement" as UC24
-  usecase "Assign Replacement Equipment" as UC25
+  usecase "Assign Replacement Resource" as UC25
   usecase "Report Task Completion" as UC26
   usecase "Release Resources and Promote Dependent Tasks" as UC27
   usecase "View Assigned Task Details" as UC28

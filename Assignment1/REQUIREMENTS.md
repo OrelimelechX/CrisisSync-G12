@@ -14,10 +14,12 @@
 
 This document defines the requirements and acceptance tests for two CrisisSync operations:
 
-1. **Reserving a resource bundle for a task, including reporting task completion.** Use cases: UC-16 Reserve Resource Bundle, UC-17 Validate Resource Reservation, UC-16a Handle Reservation Conflict, UC-18 Auto-Allocate Resource Bundle, UC-18a Retry With an Alternative Bundle, UC-26 Report Task Completion, UC-27 Release Resources and Promote Dependent Tasks.
+1. **Reserving a resource bundle for a task, including reporting task completion.** Use cases: UC-16 Reserve Resource Bundle, UC-17 Validate Resource Reservation, UC-16a Handle Reservation Conflict, UC-18 Auto-Allocate Resource Bundle, UC-18a Retry With an Alternative Bundle, UC-25 Assign Replacement Resource, UC-26 Report Task Completion, UC-27 Release Resources and Promote Dependent Tasks, UC-12 Update Crew Availability, UC-29 Report Shift Start and Readiness, UC-30 Report Equipment Malfunction.
 2. **Generating the SLA (time-compliance and service-level) report.** Use cases: UC-06 Generate Monthly Reports, UC-08 Generate SLA Report, UC-05 View Management Reports.
 
-Use case IDs match the Visual Paradigm model G12_Assignment1.vpp. Manual and automatic allocation follow the same resource availability and all-or-nothing reservation rules. Equipment replacement is shown in UC-25 and applies to an Active task, rather than starting a new task.
+Use case IDs match the Visual Paradigm model G12_Assignment1.vpp. Manual and automatic allocation follow the same resource availability and all-or-nothing reservation rules. A resource can leave an Active task through UC-30 Report Equipment Malfunction or UC-12 Update Crew Availability. Its replacement is reserved in UC-25, and the task stays Active rather than starting a new task (FR-RES-13, FR-RES-14).
+
+This version applies the course clarifications published on 15 November 2026 (Assignment 1 forum). Where a clarification covers a topic, it replaces the earlier team assumption.
 
 ## 2. Terms and Working Assumptions
 
@@ -28,7 +30,9 @@ Use case IDs match the Visual Paradigm model G12_Assignment1.vpp. Manual and aut
 - **Current assignment:** a resource reservation that is still in effect. Earlier assignments remain in the event history for auditing and cost calculations.
 - **Relevant stations:** connected Dispatchers and Field Commanders authorized to view the event, and crew members assigned to an affected task. Crew members receive their permitted task details, not unrestricted access to the event.
 - **Task states:** Blocked, Ready, Active, Completed and Canceled. Completed and Canceled are final states. A dependent task becomes Ready only when all its prerequisites are Completed.
-- **Event SLA time:** the elapsed time from event opening until its last task reaches a final state. Time spent waiting for financial settlement is not added to this duration.
+- **Event states:** Open, In Settlement, Closed and Canceled. An event In Settlement is not Open: it cannot be canceled, closed again or given new tasks. It becomes Closed only after settlement is approved.
+- **Missing resource:** a required role or equipment slot of an Active task whose resource was released, for example after an equipment malfunction or when the Logistics Officer marks a reserved crew member unavailable. The task stays Active while a slot is missing.
+- **Event SLA time:** the elapsed time from event opening until the last Completed transition of its tasks. Canceled tasks are ignored, and time spent waiting for financial settlement is not added to this duration.
 
 ### 2.2 Working assumptions
 
@@ -36,10 +40,10 @@ The story does not specify every reporting rule or numeric quality target. The f
 
 | ID | Working assumption |
 |---|---|
-| A-SLA | Include an event in the month when its last task reaches a final state, provided all its tasks are final. Exclude events marked Canceled and events with no tasks. A task reaching either Completed or Canceled counts as a final transition. An event waiting for financial settlement can therefore be included. Each event is counted once, in the first month in which all its tasks are final; a task added to the event later does not move it to another month. The story does not explicitly define these selection rules. |
+| A-SLA | **Course clarification (15 Nov 2026).** The report includes only events that were finally Closed (settlement approved) and that have at least one Completed task. Each event belongs to the month of its final closure. Its SLA time ends at its last Completed task; Canceled tasks are ignored. Canceled events, and events that are still Open or In Settlement, are excluded. |
 | A-TIME | Use the Asia/Jerusalem calendar. Start the monthly report process at 00:00 on the first day of the following month. Calculate durations from actual elapsed time, so clock changes do not change the result. |
 | A-QUALITY | The response times, load levels, TLS version, audit timestamp precision, contrast ratio and action counts below are measurable targets selected by the team. Performance checks use the course LAN environment with connected clients and a running server, except when a test explicitly introduces a failure. |
-| A-DESIGN | The following behaviors are team design decisions that make the story's rules complete and testable; the story does not state them explicitly: auditing rejected and unauthenticated requests (FR-RES-10), preventing two concurrent bundles from activating the same task (FR-RES-02), the outcome when both automatic-allocation alternatives are lost (FR-RES-11), showing "No data" for an event type without events (FR-RPT-05), regenerating missed monthly reports at startup (FR-RPT-06), the event count and duration format in the report (FR-RPT-08), a manual SLA request not starting the utilization report (AT-RPT-02), and recovery after a server crash or a lost response (NFR-REL-03). |
+| A-DESIGN | The following behaviors are team design decisions that make the story's rules complete and testable; the story does not state them explicitly: auditing rejected and unauthenticated requests (FR-RES-10), preventing two concurrent bundles from activating the same task (FR-RES-02), showing "No data" for an event type without events (FR-RPT-05), regenerating missed monthly reports at startup (FR-RPT-06), the event count and duration format in the report (FR-RPT-08), a manual SLA request not starting the utilization report (AT-RPT-02), and recovery after a server crash or a lost response (NFR-REL-03). |
 | A-UI | For the common manual reservation flow, the screen suggests a complete matching bundle. The Dispatcher can change the selection before confirming. The three-action target applies when the suggested bundle is valid. A manual report request selects one report type and one completed month. |
 
 When a task ends, equipment already reported as faulty must not become Available automatically. Only the Logistics Officer can return that equipment to Available. Completion releases resources that are still assigned to the task and preserves the earlier assignment history.
@@ -53,7 +57,7 @@ When a task ends, equipment already reported as faulty must not become Available
 | ID | Requirement |
 |---|---|
 | FR-RES-01 | The system shall accept a new bundle only from a Dispatcher for a *Ready* task whose prerequisites are all *Completed*, including a task with no prerequisites. |
-| FR-RES-02 | The system shall reserve a complete bundle in one SQL transaction. It shall lock the requested resource records before checking availability and updating them. It shall also prevent two requests from activating the same task with different bundles. If the reservation fails, the system shall roll back all changes made by that request and preserve other committed changes. The SQL database shall be the source of truth. |
+| FR-RES-02 | The system shall reserve a complete bundle in one SQL transaction. It shall lock records in one fixed order (the event record, then the task, then the requested resources in ascending ID order) before checking availability and updating them. It shall also prevent two requests from activating the same task with different bundles. If the reservation fails, the system shall roll back all changes made by that request and preserve other committed changes. The SQL database shall be the source of truth. |
 | FR-RES-03 | The system shall reject a bundle that does not match the task's required roles, equipment types and quantities, including exactly one Field Commander. |
 | FR-RES-04 | The system shall reject the reservation of an equipment item whose status is *Faulty/Under Maintenance* and of a crew member whose status is *Unavailable*. |
 | FR-RES-05 | The system shall reject the reservation of any resource, including a Field Commander, that is already *Reserved* for another task. Reservation shall not prevent the Field Commander from using the system. |
@@ -62,7 +66,10 @@ When a task ends, equipment already reported as faulty must not become Available
 | FR-RES-08 | The system shall accept a task-completion report only from the Field Commander assigned to that task, and only while the task is *Active*. |
 | FR-RES-09 | When a completion report is accepted, the system shall set the task to *Completed*, release its currently assigned resources to *Available*, and set each *Blocked* dependent task to *Ready* only if all its prerequisites are *Completed*. These changes shall be saved in one SQL transaction. Previously faulty equipment shall remain faulty, and assignment history shall be preserved. |
 | FR-RES-10 | The system shall record successful and rejected reservation and completion requests in the Audit Log, including the action, result, acting user ID and timestamp to millisecond precision. Successful records shall identify the affected task and resource state changes. Requests without a valid session shall be recorded as unauthenticated. |
-| FR-RES-11 | The system shall allow the Dispatcher to request automatic allocation using a selected criterion. If a competing request takes a selected resource, the system shall try the next best available bundle automatically, with up to two alternative attempts, without a new Dispatcher request or blocking service to other users. It shall report failure due to no available bundle only when no complete alternative bundle is available. If both alternative attempts lose to competing requests, the system shall leave the task *Ready* with no partial reservation and notify the Dispatcher that the allocation can be repeated. Every attempt shall follow the same reservation rules as manual allocation. |
+| FR-RES-11 | The system shall allow the Dispatcher to request automatic allocation using a selected criterion. If a competing request takes a selected resource, the system shall replace only the taken resources with the next best available resources by the same criterion, keep the rest of the selection, and retry the whole bundle in a new all-or-nothing transaction. It shall make up to two alternative attempts (three attempts in total), without a new Dispatcher request and without blocking service to other users. Allocation shall fail if a taken resource has no available alternative, or if the second alternative attempt also loses to a competing request. In both cases the task shall remain *Ready* with no partial reservation, and the message to the Dispatcher shall state which of the two cases occurred. Every attempt shall follow the same reservation rules as manual allocation. |
+| FR-RES-12 | The system shall reject a completion report while the task has a missing resource, unless the Dispatcher has assigned a replacement (UC-25) or has confirmed that the missing resource is no longer needed to complete the task. The rejection shall identify the missing role or equipment type. A missing Field Commander cannot be waived: a replacement commander is required and receives the task's commander permissions. |
+| FR-RES-13 | When a crew member or the Field Commander assigned to an *Active* task reports a malfunction of an item reserved for it, or the Logistics Officer marks a reserved crew member *Unavailable*, the system shall set the resource's new status, end its assignment with an end time, keep its assigned hours for cost and utilization calculations, keep the task *Active*, and alert the Dispatcher to assign a replacement. The system shall reject a reserved crew member's own report of being *Unavailable*. |
+| FR-RES-14 | The system shall reserve a replacement, chosen manually or by automatic selection, only for a missing slot of an *Active* task and only with an available resource of the missing role or equipment type. It shall apply the lock order and availability rules of FR-RES-02, FR-RES-04 and FR-RES-05, keep the task *Active*, and reject the attempt without changes if the slot or the candidate changed. A replacement Field Commander shall receive the task's commander permissions, and the released commander shall lose them. |
 
 
 ### 3.2 Operation 2 - SLA report
@@ -70,8 +77,8 @@ When a task ends, equipment already reported as faulty must not become Available
 | ID | Requirement |
 |---|---|
 | FR-RPT-01 | The system shall start automatic generation of the previous month's SLA report at 00:00 on the first day of each month, according to the server clock and A-TIME. |
-| FR-RPT-02 | The system shall calculate the average Event SLA time separately for each event type. It shall measure each included event from its opening time to the final transition of its last task, without adding financial settlement time. |
-| FR-RPT-03 | Under A-SLA, the system shall include events whose last task reaches a final state during the selected month and whose tasks are all final. It shall exclude canceled events and events with no tasks. Financial closure shall not determine the report month. |
+| FR-RPT-02 | The system shall calculate the average Event SLA time separately for each event type. It shall measure each included event from its opening time to its last Completed task, ignoring Canceled tasks and without adding financial settlement time. |
+| FR-RPT-03 | Under A-SLA, the system shall include only events finally Closed during the selected month that have at least one Completed task, and shall assign each event to the month of its final closure. It shall exclude Canceled events and events that are Open or In Settlement. |
 | FR-RPT-04 | The system shall allow the System Administrator to generate the SLA report on demand for any selected completed past month. |
 | FR-RPT-05 | The system shall display "No data" for an event type with no included events in the report period, instead of an average of 0. |
 | FR-RPT-06 | At server startup, the system shall check for missing or unfinished monthly SLA reports since the service began. It shall generate those reports and keep one complete stored SLA report per month, without duplicate results. |
@@ -113,17 +120,20 @@ When a task ends, equipment already reported as faulty must not become Available
 | FR-RES-08 | Assigned commander and Active task required | UC-26 Report Task Completion | AT-RES-08, AT-RES-09, AT-RES-17 |
 | FR-RES-09 | Completion → release + promote dependents | UC-26, UC-27 Release Resources and Promote Dependent Tasks | AT-RES-08, AT-RES-18 |
 | FR-RES-10 | Audit Log for reservation and completion | UC-16, UC-26 | AT-RES-01, AT-RES-03, AT-RES-08, AT-RES-09, AT-RES-17, AT-RES-19 |
-| FR-RES-11 | Automatic allocation and retry after a conflict | UC-18 Auto-Allocate Resource Bundle, UC-18a Retry With an Alternative Bundle, UC-17 | AT-RES-23, AT-RES-24 |
+| FR-RES-11 | Automatic allocation; replace only taken resources, up to two alternatives | UC-18 Auto-Allocate Resource Bundle, UC-18a Retry With an Alternative Bundle, UC-17 | AT-RES-23, AT-RES-24 |
+| FR-RES-12 | No completion while a resource is missing, unless replaced or waived | UC-26, UC-25 Assign Replacement Resource | AT-RES-25 |
+| FR-RES-13 | Mid-task release keeps the task *Active*; no self-release while reserved | UC-30 Report Equipment Malfunction, UC-12 Update Crew Availability, UC-29 Report Shift Start and Readiness | AT-RES-26, AT-RES-27 |
+| FR-RES-14 | Replacement only for a missing slot; commander permissions move | UC-25, UC-17 | AT-RES-26, AT-RES-27 |
 | FR-RPT-01 | Automatic month-end generation | UC-06 Generate Monthly Reports | AT-RPT-01 |
-| FR-RPT-02 | Average SLA time per event type | UC-08 Generate SLA Report | AT-RPT-01, AT-RPT-09 |
-| FR-RPT-03 | Select events by last task time; apply A-SLA | UC-08 | AT-RPT-04, AT-RPT-09 |
+| FR-RPT-02 | Average SLA time per event type, to last Completed task | UC-08 Generate SLA Report | AT-RPT-01, AT-RPT-09 |
+| FR-RPT-03 | Closed events with a Completed task, by closure month (A-SLA) | UC-08 | AT-RPT-04, AT-RPT-09 |
 | FR-RPT-04 | On-demand report for past month | UC-08 Generate SLA Report | AT-RPT-02 |
 | FR-RPT-05 | "No data" instead of 0 | UC-08 | AT-RPT-03 |
 | FR-RPT-06 | Recover absent or unfinished monthly report | UC-06 | AT-RPT-05 |
 | FR-RPT-07 | Admin-only human access; scheduled job permitted | UC-05 View Management Reports, UC-06, UC-08 | AT-RPT-01, AT-RPT-06 |
 | FR-RPT-08 | Report content and format | UC-08 | AT-RPT-01, AT-RPT-09 |
 | NFR-PERF-01 | Reservation ≤ 2 s (95%) / ≤ 7 s (100%) | UC-16 | AT-RES-07, AT-RES-11 |
-| NFR-PERF-02 | Push ≤ 1 s | UC-16, UC-26, UC-19 Monitor Event Status | AT-RES-01, AT-RES-08, AT-RES-22 |
+| NFR-PERF-02 | Push ≤ 1 s | UC-16, UC-26, UC-19 Monitor Event Status | AT-RES-01, AT-RES-08, AT-RES-22, AT-RES-26 |
 | NFR-PERF-03 | SLA report ≤ 10 s for 10,000 events | UC-08 | AT-RPT-07 |
 | NFR-SEC-01 | Server-side role authorization (100%) | UC-16, UC-26, UC-05, UC-08 | AT-RES-01, AT-RES-08, AT-RES-09, AT-RES-19, AT-RPT-02, AT-RPT-06 |
 | NFR-SEC-02 | TLS 1.2+ for both operations | UC-16, UC-26, UC-05, UC-08 | AT-RES-13 |
@@ -150,11 +160,11 @@ Feature: Reserve resources for a task and report its completion
     Given event "EV-100" is an Open building-collapse event in Haifa
     And Dispatcher "D1" is logged in
     And task "T-1" belongs to "EV-100" and requires this bundle
-      | role or equipment type    | quantity |
-      | Field Commander           | 1        |
-      | Heavy Equipment Operator  | 1        |
-      | Bulldozer                 | 1        |
-      | Medic                     | 1        |
+      | role or equipment type   | quantity |
+      | Field Commander          | 1        |
+      | Heavy Equipment Operator | 1        |
+      | Bulldozer                | 1        |
+      | Medic                    | 1        |
     And the matching resources are "FC-7", "OP-3", "BD-2" and "MD-5"
 
   @AT-RES-01
@@ -179,7 +189,7 @@ Feature: Reserve resources for a task and report its completion
       | Blocked   |
       | Active    |
       | Completed |
-      | Canceled |
+      | Canceled  |
 
   @AT-RES-03
   Scenario: AT-RES-03 - Two Dispatchers try to reserve the same bulldozer
@@ -188,7 +198,7 @@ Feature: Reserve resources for a task and report its completion
     And "BD-2" is Available
     And neither task releases its resources during the test
     When both Dispatchers request their bundles at the same time
-    Then database tracing shows resource records locked before availability checks and updates
+    Then database tracing shows that each request locks its event record, then its task, then its resource records in ascending ID order, before availability checks and updates
     And each reservation attempt uses one SQL transaction
     And exactly one reservation succeeds
     And "BD-2" remains Reserved for the successful task
@@ -209,7 +219,7 @@ Feature: Reserve resources for a task and report its completion
     And the screen identifies "<id>", explains its status and refreshes the selected resources
     Examples:
       | id   | status                   |
-      | BD-2 | Faulty/Under Maintenance  |
+      | BD-2 | Faulty/Under Maintenance |
       | MD-5 | Unavailable              |
 
   @AT-RES-05
@@ -331,11 +341,11 @@ Feature: Reserve resources for a task and report its completion
     Then the system identifies the mismatch and rejects the entire bundle
     And "T-1" remains Ready and no resources are reserved
     Examples:
-      | error                                                   |
-      | a generator instead of the required bulldozer             |
-      | no medic                                                 |
-      | two medics instead of the required one                    |
-      | a firefighter instead of the heavy equipment operator     |
+      | error                                                 |
+      | a generator instead of the required bulldozer         |
+      | no medic                                              |
+      | two medics instead of the required one                |
+      | a firefighter instead of the heavy equipment operator |
 
   @AT-RES-17
   Scenario Outline: AT-RES-17 - Allow completion only for an Active task
@@ -351,7 +361,7 @@ Feature: Reserve resources for a task and report its completion
       | Blocked   |
       | Ready     |
       | Completed |
-      | Canceled |
+      | Canceled  |
 
   @AT-RES-18
   Scenario: AT-RES-18 - Preserve faulty equipment status and check every prerequisite
@@ -429,27 +439,74 @@ Feature: Reserve resources for a task and report its completion
     And "T-1" becomes Active with exactly one assigned Field Commander
 
   @AT-RES-24
-  Scenario Outline: AT-RES-24 - Recover automatically when another request takes a resource
-    Given "T-1" is Ready and automatic allocation has selected an available bundle
-    And another Dispatcher reserves one selected resource before this allocation commits
-    And the remaining available bundles are "<alternatives>"
+  Scenario Outline: AT-RES-24 - Replace only the taken resource after a conflict
+    Given "T-1" is Ready and automatic allocation has selected "FC-7", "OP-3", "BD-2" and "MD-5"
+    And another Dispatcher reserves "BD-2" before this allocation commits
+    And <situation>
     When the system handles the conflict
-    Then no partial reservation from the failed attempt remains
-    And the system performs "<recovery>" without a new Dispatcher request
-    And it makes no more than two alternative reservation attempts
+    Then no partial reservation from a failed attempt remains
+    And each new attempt keeps "FC-7", "OP-3" and "MD-5" and replaces only the taken bulldozer
+    And each attempt reserves the whole bundle in one all-or-nothing transaction
+    And the system makes no more than two alternative attempts, without a new Dispatcher request
     And another Dispatcher can reserve an unrelated available bundle while this request is handled
+    And the outcome is: <outcome>
     Examples:
-      | alternatives                                  | recovery                                                    |
-      | one complete matching bundle                  | reserve the next best bundle and set the task to Active      |
-      | first alternative is taken, second is available | reserve the second alternative and set the task to Active    |
-      | no complete matching bundle                   | report no available bundle and leave the task Ready          |
-      | both alternatives are taken by competing requests while other bundles remain available | leave the task Ready and notify the Dispatcher that the allocation can be repeated |
+      | situation                                                   | outcome                                                                                     |
+      | bulldozer "BD-3" is Available                               | "T-1" is Active with "BD-3" replacing "BD-2"                                                |
+      | "BD-3" is also taken before commit, and "BD-4" is Available | the second alternative attempt reserves "BD-4" and "T-1" is Active                          |
+      | no other bulldozer is Available                             | "T-1" remains Ready and the Dispatcher is told that no alternative bulldozer is available   |
+      | "BD-3" and then "BD-4" are both taken by competing requests | "T-1" remains Ready and the Dispatcher is told that allocation failed because of contention |
+
+  @AT-RES-25
+  Scenario Outline: AT-RES-25 - Block completion while a required resource is missing
+    Given "T-1" is Active under "FC-7"
+    And bulldozer "BD-2" was reported Faulty and released from "T-1", which stays Active
+    And <dispatcher action>
+    When "FC-7" reports that "T-1" is complete
+    Then <result>
+    Examples:
+      | dispatcher action                                               | result                                                                               |
+      | no replacement is assigned and the bulldozer was not waived     | the report is rejected, "T-1" remains Active and the missing bulldozer is identified |
+      | the Dispatcher assigned replacement bulldozer "BD-3"            | "T-1" becomes Completed and "BD-3" becomes Available                                 |
+      | the Dispatcher confirmed that the bulldozer is no longer needed | "T-1" becomes Completed and "BD-2" remains Faulty/Under Maintenance                  |
+
+  @AT-RES-26
+  Scenario Outline: AT-RES-26 - Replace a resource released from an Active task
+    Given "T-1" is Active with "FC-7", "OP-3", "BD-2" and "MD-5" Reserved for it
+    And bulldozer "BD-3" and Field Commander "FC-9" are Available
+    When <release>
+    Then "<released>" has status "<status>" and is no longer assigned to "T-1"
+    And its assignment record has an end time and its assigned hours are kept for cost and utilization calculations
+    And "T-1" remains Active and its other resources remain Reserved for it
+    And "D1" receives an alert within 1 second of commit to assign a replacement <slot>
+    When "D1" assigns "<replacement>" to the missing slot
+    Then "<replacement>" is Reserved for "T-1" and "T-1" remains Active
+    And <commander result>
+    Examples:
+      | release                                                            | released | status                   | slot            | replacement | commander result                                                         |
+      | crew member "MD-5" reports that bulldozer "BD-2" has malfunctioned | BD-2     | Faulty/Under Maintenance | bulldozer       | BD-3        | "FC-7" remains the commander of "T-1"                                    |
+      | the Logistics Officer marks "FC-7" Unavailable because of sickness | FC-7     | Unavailable              | Field Commander | FC-9        | "FC-9" can report completion of "T-1" and "FC-7" can no longer report it |
+
+  @AT-RES-27
+  Scenario Outline: AT-RES-27 - Reject an invalid replacement or a self-reported unavailability
+    Given "T-1" is Active and bulldozer "BD-2" was released from it after a reported malfunction
+    And "FC-7", "OP-3" and "MD-5" remain Reserved for "T-1"
+    When <request>
+    Then the request is rejected and the reason states that <reason>
+    And "T-1" remains Active with its existing assignments unchanged
+    And no resource is newly Reserved for "T-1"
+    Examples:
+      | request                                                                           | reason                                                                 |
+      | "D1" selects generator "GN-1" as the replacement                                  | a bulldozer is required                                                |
+      | "D1" selects medic "MD-6" although no medic slot is missing                       | no medic slot is missing                                               |
+      | another Dispatcher reserves "BD-3" just before "D1" commits it as the replacement | "BD-3" is already Reserved for another task                            |
+      | "MD-5" reports that they are Unavailable                                          | only the Logistics Officer can change a reserved member's availability |
 
 ```
 
 ### 6.2 Operation 2 - SLA report
 
-The report tests use the selection policy in A-SLA. Unless stated otherwise, all times below are local server times and all tasks of the listed events are final.
+The report tests use the selection policy in A-SLA (course clarification). Unless stated otherwise, all times below are local server times, all tasks of the listed events are final, and each listed event has at least one Completed task.
 
 ```gherkin
 Feature: Generate and view the monthly SLA report
@@ -458,11 +515,11 @@ Feature: Generate and view the monthly SLA report
     Given the server time zone is "Asia/Jerusalem"
     And System Administrator "ADM1" is logged in
     And the following events exist
-      | event | type          | opened           | last task final  | event status |
-      | EV-1  | Fire          | 2026-10-03 10:00 | 2026-10-03 14:00 | Closed       |
-      | EV-2  | Fire          | 2026-10-10 08:00 | 2026-10-10 10:00 | Closed       |
-      | EV-3  | Road Accident | 2026-10-12 09:00 | 2026-10-12 10:30 | Closed       |
-      | EV-4  | Road Accident | 2026-10-20 12:00 | 2026-10-20 12:20 | Canceled    |
+      | event | type          | opened           | last Completed task | finally closed   | event status |
+      | EV-1  | Fire          | 2026-10-03 10:00 | 2026-10-03 14:00    | 2026-10-03 15:00 | Closed       |
+      | EV-2  | Fire          | 2026-10-10 08:00 | 2026-10-10 10:00    | 2026-10-10 11:00 | Closed       |
+      | EV-3  | Road Accident | 2026-10-12 09:00 | 2026-10-12 10:30    | 2026-10-12 11:30 | Closed       |
+      | EV-4  | Road Accident | 2026-10-20 12:00 | 2026-10-20 12:20    | -                | Canceled     |
     And no other events are included unless a scenario adds them
 
   @AT-RPT-01
@@ -487,10 +544,10 @@ Feature: Generate and view the monthly SLA report
     Then the system returns "<result>"
     And the manual SLA request does not start a resource utilization report
     Examples:
-      | month          | result                                                  |
-      | October 2026   | a report showing Fire 03:00 and Road Accident 01:30      |
-      | November 2026  | an error asking the user to select a completed month     |
-      | December 2026  | an error asking the user to select a completed month     |
+      | month         | result                                               |
+      | October 2026  | a report showing Fire 03:00 and Road Accident 01:30  |
+      | November 2026 | an error asking the user to select a completed month |
+      | December 2026 | an error asking the user to select a completed month |
 
   @AT-RPT-03
   Scenario: AT-RPT-03 - Show No data when a type has no eligible events
@@ -513,8 +570,8 @@ Feature: Generate and view the monthly SLA report
     Then it generates and stores one complete October SLA report
     And a second restart does not create a duplicate report
     Examples:
-      | state                              |
-      | not started                        |
+      | state                                |
+      | not started                          |
       | started but no complete result saved |
 
   @AT-RPT-06
@@ -551,17 +608,19 @@ Feature: Generate and view the monthly SLA report
     Then the report opens using no more than 2 user actions
 
   @AT-RPT-09
-  Scenario: AT-RPT-09 - Use the last task time rather than financial closure
+  Scenario: AT-RPT-09 - Count by final closure month and measure to the last Completed task
     Given Natural Disaster event "EV-5" opens on 30 October at 20:00
-    And its last task becomes Completed on 31 October at 22:01:20
-    And its other tasks are already final
-    And "EV-5" remains Open until financial settlement is approved on 1 November at 09:00
-    And another non-canceled Natural Disaster event has no tasks
+    And its last Completed task is completed on 31 October at 22:01:20
+    And another of its tasks is Canceled on 31 October at 23:30
+    And "EV-5" is In Settlement at the end of October and is finally Closed on 1 November at 09:00
+    And Natural Disaster event "EV-6" is finally Closed in November and all its tasks are Canceled
+    And no other Natural Disaster event is closed in October or November
     When the October SLA report is generated at the start of November
-    Then "EV-5" is included even though financial settlement is still pending
-    And the Natural Disaster row shows 1 event with an average of "26:01"
-    And the event with no tasks is excluded
-    When the November SLA report is generated after November ends
-    Then "EV-5" is not counted again
+    Then "EV-5" is not included, because it was not finally Closed in October
     And the Natural Disaster row shows zero events and "No data"
+    When the November SLA report is generated after November ends
+    Then "EV-5" is included in November, the month of its final closure
+    And its SLA time ends at its last Completed task, not at the Canceled task or at the closure
+    And the Natural Disaster row shows 1 event with an average of "26:01"
+    And "EV-6" is excluded because it has no Completed task
 ```

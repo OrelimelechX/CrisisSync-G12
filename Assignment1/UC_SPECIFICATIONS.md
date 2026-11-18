@@ -45,7 +45,7 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 | UC-15 | Edit Task Dependencies | Dispatcher | - |
 | UC-16 | Reserve Resource Bundle | Dispatcher | UC-17 Validate Resource Reservation; extended by UC-16a Handle Reservation Conflict |
 | UC-16a | Handle Reservation Conflict | - | extends UC-16 Reserve Resource Bundle |
-| UC-17 | Validate Resource Reservation | - | included by UC-16 Reserve Resource Bundle; included by UC-18 Auto-Allocate Resource Bundle; included by UC-25 Assign Replacement Equipment |
+| UC-17 | Validate Resource Reservation | - | included by UC-16 Reserve Resource Bundle; included by UC-18 Auto-Allocate Resource Bundle; included by UC-25 Assign Replacement Resource |
 | UC-18 | Auto-Allocate Resource Bundle | Dispatcher | UC-17 Validate Resource Reservation; extended by UC-18a Retry With an Alternative Bundle |
 | UC-18a | Retry With an Alternative Bundle | - | extends UC-18 Auto-Allocate Resource Bundle |
 | UC-19 | Monitor Event Status | Dispatcher, Field Commander | - |
@@ -56,7 +56,7 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 | UC-22a | Handle Settlement Rejection | - | extends UC-22 Close Event |
 | UC-23 | Calculate Operating Costs | - | included by UC-22 Close Event |
 | UC-24 | Request Settlement | National Clearing & Settlement System | included by UC-22 Close Event |
-| UC-25 | Assign Replacement Equipment | Dispatcher | UC-17 Validate Resource Reservation |
+| UC-25 | Assign Replacement Resource | Dispatcher | UC-17 Validate Resource Reservation |
 | UC-26 | Report Task Completion | Field Commander | UC-27 Release Resources and Promote Dependent Tasks |
 | UC-27 | Release Resources and Promote Dependent Tasks | - | included by UC-26 Report Task Completion |
 | UC-28 | View Assigned Task Details | Field Crew Member | - |
@@ -139,7 +139,7 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 **Main flow**
 
 1. The administrator opens event history and selects date, type or status filters.
-2. The system lists matching open, closed and canceled events.
+2. The system lists matching open, in-settlement, closed and canceled events.
 3. The administrator selects an event.
 4. The system displays its tasks, resource assignments, settlement approvals and timestamped action timeline, including the acting user.
 
@@ -229,8 +229,8 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 
 1. The administrator selects a past month and the SLA report, or the monthly job supplies the month.
 2. The server validates the month and requester.
-3. The system selects eligible events under reporting policy A-SLA.
-4. For each eligible event, the system subtracts the opening time from the last task's final timestamp.
+3. The system selects the events finally closed during the month that have at least one Completed task (A-SLA).
+4. For each selected event, the system subtracts the opening time from its last Completed task, ignoring canceled tasks.
 5. The system averages the durations separately for each event type and records the count.
 6. The system stores the report with its month and generation time and makes it available to the administrator.
 
@@ -286,19 +286,19 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 
 **Preconditions:** A logistics officer is signed in.
 
-**Postconditions - success:** The exceptional availability change is recorded and published.
+**Postconditions - success:** The exceptional availability change is recorded and published. A reserved member is released, the task stays Active and the dispatcher is alerted to assign a replacement.
 
-**Postconditions - failure:** The request does not overwrite another task's reservation.
+**Postconditions - failure:** No partial change is recorded.
 
 **Main flow**
 
 1. The officer selects a crew member and enters an availability change, for example sickness or leave.
-2. The server checks the current state against any live assignment.
+2. The server finds, without locking, any task to which the member is reserved. It then locks the event record, the task and the member in that order and verifies that the assignment has not changed.
 3. The system records the availability and publishes the update.
 
 **Extensions**
 
-- **2a. The change conflicts with a current reservation:** Preserve the live assignment and show the conflict. End the attempt.
+- **2a. The crew member is currently reserved:** Release the member and close the assignment record with an end time. The task stays Active and the dispatcher is alerted to assign a replacement (UC-25). If the member is the Field Commander, a replacement commander is required. Continue at step 3.
 
 ## UC-13 Open Event
 
@@ -333,7 +333,7 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 **Main flow**
 
 1. The dispatcher enters a name, estimated duration, prerequisite tasks and required resource bundle.
-2. The system checks the event, task data and exactly one required Field Commander.
+2. The server locks the event record and checks that the event is still Open. It validates the task data and that the bundle requires exactly one Field Commander.
 3. The system validates same-event prerequisites and verifies that the graph remains acyclic.
 4. The server creates the task as Blocked if a prerequisite is still open, or Ready if every prerequisite is Completed, including when there are none.
 5. The system audits the new state and pushes the updated task tree.
@@ -341,6 +341,7 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 **Extensions**
 
 - **2a. Invalid bundle or task data:** Identify the missing or invalid value. Return to step 1.
+- **2b. Event is no longer Open, including In Settlement:** Reject the task, show the current event status and end the request.
 - **3a. Cycle, foreign event or canceled prerequisite:** Reject the selection if it creates a cycle, refers to a task from another event, or includes a canceled prerequisite. Return to step 1.
 
 ## UC-15 Edit Task Dependencies
@@ -358,7 +359,7 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 1. The dispatcher opens the task's prerequisites.
 2. The system checks that the task is Blocked.
 3. The dispatcher submits the revised prerequisite set.
-4. Under a concurrency guard, the server rechecks the task state, same-event membership, candidate states and the absence of cycles.
+4. The server locks the event record, checks that the event is still Open, and rechecks the task state, same-event membership, candidate states and the absence of cycles.
 5. The server saves the graph, promotes the task if eligible, audits state changes and pushes the update.
 
 **Extensions**
@@ -422,8 +423,8 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 **Main flow**
 
 1. The caller requests a reservation check inside its transaction.
-2. The server locks the task and requested resource rows and rereads their committed state.
-3. For a new bundle the server verifies Ready, all predecessors Completed, exact bundle composition and one Field Commander. For a replacement it verifies Active and one unfilled equipment slot of the requested type.
+2. The server locks the event record, then the task, then the requested resources in ascending ID order, and rereads their committed state.
+3. For a new bundle the server verifies Ready, all predecessors Completed, exact bundle composition and one Field Commander. For a replacement it verifies Active and one missing slot of the requested role or equipment type.
 4. The server verifies availability and exclusive ownership of every candidate and returns the result without an independent commit.
 
 **Extensions**
@@ -452,27 +453,28 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 **Extensions**
 
 - **2a. No complete available bundle exists:** Report the missing requirement and refresh the current state. End the request.
-- **3a. Another allocation won a selected resource:** Apply UC-18a at Candidate conflict to try the next best available bundle automatically, with up to two alternative attempts.
+- **3a. Another allocation won a selected resource:** Apply UC-18a at Candidate conflict to replace only the taken resources automatically, with up to two alternative attempts.
 - **3b. Task no longer Ready:** Roll back this attempt, refresh the current state and end the request.
 
 ## UC-18a Retry With an Alternative Bundle
 
 **Preconditions:** A competing allocation took a candidate and fewer than two alternative attempts have been made.
 
-**Postconditions - success:** A complete alternative bundle is reserved, and the task becomes Active.
+**Postconditions - success:** The taken resources are replaced, the complete bundle is reserved, and the task becomes Active.
 
-**Postconditions - failure:** No partial reservation remains. If no complete alternative bundle is available, the Dispatcher is notified. No more than two alternative attempts are made.
+**Postconditions - failure:** No partial reservation remains and the task stays Ready. The Dispatcher is told whether a taken resource had no available alternative or the second alternative attempt also lost to contention. No more than two alternative attempts are made.
 
 **Main flow**
 
 1. The server rolls back the losing candidate and releases its locks.
-2. The system selects the next best available complete bundle by the same criterion without asking the dispatcher to resubmit.
-3. The server repeats UC-18 steps 3 and 4 using the next alternative, without blocking unrelated requests.
+2. The system replaces only the taken resources with the next best available resources by the same criterion and keeps the rest of the selection, without asking the dispatcher to resubmit.
+3. The server validates and commits the whole bundle again in a new all-or-nothing transaction (UC-18 steps 3 and 4), without blocking unrelated requests.
 
 **Extensions**
 
-- **2a. No complete alternative is available:** Report that no alternative is available and end the request.
-- **3a. Second alternative also loses a race:** Roll back this attempt, leave the task Ready with no partial reservation, and notify the dispatcher that the allocation can be repeated. End the request.
+- **2a. A taken resource has no available alternative:** Leave the task Ready with no partial reservation and tell the dispatcher which resource has no available alternative. End the request.
+- **3a. First alternative also loses a race:** Roll back this attempt and return to step 1 for the second and final alternative attempt.
+- **3b. Second alternative also loses a race:** Roll back this attempt, leave the task Ready with no partial reservation, and tell the dispatcher that allocation failed because of contention. End the request.
 
 ## UC-19 Monitor Event Status
 
@@ -512,14 +514,14 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 1. The dispatcher requests cancellation of a task.
 2. The server checks its current state and finds its distinct non-final direct and indirect dependents.
 3. The dispatcher confirms cancellation of the target.
-4. The server rechecks the scope, cancels the target and releases its live assignments, with audit and push.
+4. The server locks the event record and recomputes the scope. If it is unchanged, the server cancels the target and releases its live assignments, with audit and push.
 
 **Extensions**
 
 - **2a. Cancel Dependent Tasks:** At Cancellation scope, UC-20a replaces steps 3 and 4. End UC-20 with the result of that single confirmation.
 - **2b. Target already final:** Show its current state and end the request.
 - **3a. Dispatcher declines:** Preserve the committed state and end the request.
-- **4a. The affected set changed:** Recompute the affected set at step 2 before requesting new confirmation.
+- **4a. The affected set changed:** Cancel nothing. Recompute the affected set at step 2 and require a new confirmation.
 
 ## UC-20a Cancel Dependent Tasks
 
@@ -532,14 +534,14 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 **Main flow**
 
 1. The system determines the distinct affected non-final descendants.
-2. The system displays how many tasks will be canceled, identifying the target and its descendants.
+2. The system displays, as a preview, how many tasks will be canceled, identifying the target and its descendants.
 3. The dispatcher confirms the full scope once.
-4. The server rechecks that scope, cancels all confirmed tasks, releases their live assignments, audits the changes and pushes them.
+4. The server locks the event record and recomputes the scope. If it matches the confirmed preview, the server cancels all confirmed tasks, releases their live assignments, audits the changes and pushes them.
 
 **Extensions**
 
 - **3a. Dispatcher declines:** End UC-20 without cancelling any task.
-- **4a. Affected set changed:** Show the revised affected set at step 2 and obtain a fresh confirmation.
+- **4a. Affected set changed:** Cancel nothing, show the revised number at step 2 and require a fresh confirmation.
 
 ## UC-21 Cancel Event
 
@@ -556,12 +558,12 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 1. The dispatcher selects an open event for cancellation.
 2. The system identifies all non-final tasks and their live reservations.
 3. The dispatcher confirms the event cancellation.
-4. The server cancels those tasks, releases their live resources, records the event cancellation time and publishes the changes. Final tasks retain their existing states.
+4. The server locks the event record, cancels those tasks, releases their live resources, records the event cancellation time and publishes the changes. Final tasks retain their existing states.
 
 **Extensions**
 
 - **3a. Dispatcher declines:** End the request without changes.
-- **4a. Event no longer open:** Refresh its current status and end the request.
+- **4a. Event no longer Open, including an event In Settlement:** Refresh its current status and end the request.
 
 ## UC-22 Close Event
 
@@ -571,34 +573,34 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 
 **Postconditions - success:** The approval and transaction token are stored, and the event is Closed with its automatic closing time.
 
-**Postconditions - failure:** No unapproved closure is recorded. The dispatcher sees why closure did not complete.
+**Postconditions - failure:** No closure is recorded without an approval and a transaction token. If this request moved the event to In Settlement, the event returns to Open. The dispatcher sees why closure did not complete.
 
 **Main flow**
 
 1. The dispatcher requests event closure.
-2. The server verifies that all event tasks are Completed or Canceled.
+2. In a short transaction the server locks the event, verifies that all its tasks are Completed or Canceled, and sets the event to In Settlement.
 3. The system calculates operating costs (UC-23).
-4. The system requests settlement and receives the outcome (UC-24).
-5. On approval with a transaction token, the server stores the approval and token, records the closure time and closes the event.
+4. Outside the transaction, the system requests settlement with the event's unique identifier and receives the outcome (UC-24).
+5. In a new transaction, on approval with a transaction token, the server stores the approval and token, records the closure time, closes the event and audits the settlement and closure.
 
 **Extensions**
 
-- **2a. At least one task is non-final:** Show the outstanding tasks and end the request.
-- **4a. The clearing system explicitly rejects settlement:** Apply UC-22a at Settlement outcome and end the request with the event open.
-- **4b. No response, or approval lacks a token:** Keep the event open, flag the outcome as unconfirmed and notify the dispatcher. End the request without asserting a decline.
+- **2a. The event is not Open or a task is non-final:** Show the current event status or the outstanding tasks. Only one closing request can move the event to In Settlement. End the request.
+- **4a. The clearing system explicitly rejects settlement:** Apply UC-22a at Settlement outcome and end the request with the event Open.
+- **4b. No response, or approval lacks a token:** Return the event from In Settlement to Open, record the failed attempt, including a timeout, and alert the dispatcher. End the request.
 
 ## UC-22a Handle Settlement Rejection
 
 **Preconditions:** The clearing system explicitly rejected settlement at UC-22 step 4.
 
-**Postconditions - success:** The rejection is recorded and the dispatcher is alerted. The event remains open.
+**Postconditions - success:** The rejection is recorded, the event returns to Open and the dispatcher is alerted.
 
 **Postconditions - failure:** The request cannot close the event without approval and a token.
 
 **Main flow**
 
-1. The system records the rejection against the event.
-2. The system alerts the dispatcher that the event remains open.
+1. The system records the rejection and returns the event from In Settlement to Open.
+2. The system alerts the dispatcher that the event is Open again.
 
 **Extensions**
 
@@ -606,7 +608,7 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 
 ## UC-23 Calculate Operating Costs
 
-**Preconditions:** An event is being closed after its tasks have reached final states.
+**Preconditions:** The event is In Settlement after all its tasks reached final states.
 
 **Postconditions - success:** A total with personnel hours, equipment engine hours and consumables is available for settlement.
 
@@ -620,7 +622,7 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 
 **Extensions**
 
-- **2a. Required cost data missing:** Identify the missing data to the dispatcher; leave the event open. End closure.
+- **2a. Required cost data missing:** Return the event from In Settlement to Open and identify the missing data to the dispatcher. End closure.
 
 ## UC-24 Request Settlement
 
@@ -634,7 +636,7 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 
 **Main flow**
 
-1. CrisisSync sends the charge and reimbursement request to the National Clearing and Settlement System.
+1. CrisisSync sends the charge and reimbursement request with the event's unique identifier to the National Clearing and Settlement System, so a repeated request is not charged twice.
 2. The external system returns its decision.
 3. CrisisSync checks the response and passes an approval and token to UC-22.
 
@@ -644,25 +646,26 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 - **2b. No response:** Return an unconfirmed outcome to UC-22 step 4.
 - **3a. Missing token:** Return an unconfirmed outcome to UC-22 step 4.
 
-## UC-25 Assign Replacement Equipment
+## UC-25 Assign Replacement Resource
 
 **Actors:** Dispatcher
 
-**Preconditions:** A dispatcher is signed in. An equipment breakdown left a matching slot unfilled on an Active task.
+**Preconditions:** A dispatcher is signed in. An equipment malfunction or a crew member marked unavailable left a slot missing on an Active task.
 
-**Postconditions - success:** One available replacement of the required type is reserved for the active task.
+**Postconditions - success:** An available replacement of the required role or equipment type is reserved for the Active task, or the dispatcher records that the missing resource is no longer needed.
 
 **Postconditions - failure:** This attempt reserves no replacement. The faulty item remains faulty.
 
 **Main flow**
 
-1. The dispatcher opens the malfunction alert and selects a matching replacement.
+1. The dispatcher opens the alert and selects a matching replacement manually or requests automatic selection by a criterion.
 2. The server validates the single replacement under SQL locks (UC-17).
-3. The system reserves the replacement in the existing equipment slot, audits it and pushes the change.
+3. The system reserves the replacement in the missing slot, audits it and pushes the change. A replacement Field Commander receives the task's commander permissions.
 
 **Extensions**
 
-- **1a. No matching item is available:** Show the shortage to the dispatcher and keep the slot unfilled. End the attempt.
+- **1a. No matching resource is available:** Show the shortage and keep the slot missing until a replacement is assigned or the dispatcher waives the slot (1b). End the attempt.
+- **1b. The missing resource is no longer needed:** The dispatcher confirms that the task can be completed without it. The server locks the event record, records and audits the waiver and pushes the update. A missing Field Commander cannot be waived. End the use case.
 - **2a. A competing request filled the slot or took the candidate:** Reject this attempt and show the current state. Return to step 1 if a replacement is still needed.
 - **2b. Task is no longer Active:** Refresh the task; do not reserve a replacement. End the attempt.
 
@@ -679,14 +682,14 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 **Main flow**
 
 1. The commander selects an assigned task and reports completion.
-2. The server verifies under lock that the caller is its commander and the task is Active.
+2. The server locks the event record, the task and its resources in that order, and verifies that the caller is its commander, the task is Active and no required resource is missing unless the dispatcher waived it.
 3. The server marks the task Completed and applies UC-27 in the same transaction.
 4. The server commits and audits the transitions and pushes the authorized changes.
 
 **Extensions**
 
 - **2a. Caller is not the assigned commander:** Reject the report, disclose no unauthorized details and end the request.
-- **2b. Task no longer Active, including concurrent cancellation:** Reject the report and show the permitted current state. End the request.
+- **2b. Task no longer Active, including concurrent cancellation, or a required resource is missing:** Reject the report and show the permitted current state, including any missing role or equipment type awaiting replacement or a dispatcher waiver. End the request.
 - **3a. Transaction interrupted before commit:** Roll back the task, assignment and dependent changes together. End the request.
 - **4a. Acknowledgement lost after commit:** On reconnect display the committed completion, without reapplying it. End the request.
 
@@ -747,7 +750,7 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 
 **Extensions**
 
-- **2a. Member is currently reserved:** Record the readiness report without making the person available for a second task. End the request.
+- **2a. Member is currently reserved:** Record the shift start but reject an Unavailable status, because only the Logistics Officer can change the availability of a reserved member. End the request.
 
 ## UC-30 Report Equipment Malfunction
 
@@ -755,16 +758,16 @@ In Visual Paradigm they are entered in Use Case Details: preconditions and postc
 
 **Preconditions:** The signed-in field crew member or commander is assigned to the affected Active task.
 
-**Postconditions - success:** The item is marked Faulty immediately, its live assignment ends, and the dispatcher is notified that a replacement is needed.
+**Postconditions - success:** The item is marked Faulty immediately, its live assignment ends with an end time, the task stays Active, and the dispatcher is notified that a replacement is needed.
 
 **Postconditions - failure:** A rejected report does not alter inventory or assignments.
 
 **Main flow**
 
 1. The reporter selects the affected item and reports its malfunction.
-2. The server verifies the reporter's assignment, task state and item assignment.
-3. The system marks the item Faulty, ends its live assignment, retains its usage history, audits the change and pushes the alert to the dispatcher.
+2. The server finds, without locking, the task to which the item is reserved. It then locks the event record, the task and the item in that order and verifies that the item and the reporter are still assigned to that Active task.
+3. The system marks the item Faulty, ends its live assignment with an end time, keeps the task Active, retains its usage history, audits the change and alerts the dispatcher to assign a replacement (UC-25).
 
 **Extensions**
 
-- **2a. Item no longer assigned or reporter unauthorized:** Reject the request and return only authorized current information. End the request.
+- **2a. Assignment changed or reporter unauthorized:** Reject the request and return only authorized current information. End the request.
